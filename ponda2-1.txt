@@ -1,0 +1,139 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <math.h>
+
+typedef struct {
+    unsigned char red, green, blue;
+} PoojPixel;
+
+typedef struct {
+    int width;
+    int height;
+    PoojPixel* data;
+} PoojImage;
+
+PoojImage* pooj_loadPPM(const char* filename);
+void pooj_freePPM(PoojImage* image);
+
+void pooj_initializeHistogram(int*** histogram, int size);
+int pooj_calculateBinIndex(int color_value, int factor);
+
+int main() {
+    int bin_factor;
+    int total_pixels, i, bin_r, bin_g, bin_b;
+    PoojImage* img1, * img2;
+    double chi_square = 0.0;
+    char img1_filename[256], img2_filename[256];
+
+   
+    printf("Enter first image file name: ");
+    scanf("%s", img1_filename);
+    printf("Enter second image file name: ");
+    scanf("%s", img2_filename);
+    printf("Enter Histogram size (2, 4, 8, or 16): ");
+    scanf("%d", &bin_factor);
+
+    int histogram_total_bins = bin_factor * bin_factor * bin_factor;
+
+    img1 = pooj_loadPPM(img1_filename);
+    img2 = pooj_loadPPM(img2_filename);
+
+    if (!img1 || !img2) {
+        printf("Error: Could not load one or both images.\n");
+        return 1;
+    }
+
+    int*** histogram1 = (int***)malloc(bin_factor * sizeof(int**));
+    int*** histogram2 = (int***)malloc(bin_factor * sizeof(int**));
+    pooj_initializeHistogram(histogram1, bin_factor);
+    pooj_initializeHistogram(histogram2, bin_factor);
+
+    for (i = 0; i < img1->width * img1->height; i++) {
+        bin_r = pooj_calculateBinIndex(img1->data[i].red, bin_factor);
+        bin_g = pooj_calculateBinIndex(img1->data[i].green, bin_factor);
+        bin_b = pooj_calculateBinIndex(img1->data[i].blue, bin_factor);
+        histogram1[bin_r][bin_g][bin_b]++;
+    }
+
+    for (i = 0; i < img2->width * img2->height; i++) {
+        bin_r = pooj_calculateBinIndex(img2->data[i].red, bin_factor);
+        bin_g = pooj_calculateBinIndex(img2->data[i].green, bin_factor);
+        bin_b = pooj_calculateBinIndex(img2->data[i].blue, bin_factor);
+        histogram2[bin_r][bin_g][bin_b]++;
+    }
+
+    total_pixels = (img1->width * img1->height) + (img2->width * img2->height);
+
+    for (i = 0; i < bin_factor; i++) {
+        for (int j = 0; j < bin_factor; j++) {
+            for (int k = 0; k < bin_factor; k++) {
+                double h1 = (double)histogram1[i][j][k];
+                double h2 = (double)histogram2[i][j][k];
+                if (h1 + h2 > 0) {
+                    chi_square += ((h1 - h2) * (h1 - h2)) / (h1 + h2);
+                }
+            }
+        }
+    }
+    chi_square /= total_pixels;
+
+    printf("First image: %s, Second image: %s\n", img1_filename, img2_filename);
+    printf("Histogram size = %d\n", histogram_total_bins);
+    printf("Total Pixels = %d\n", total_pixels);
+    printf("Chi-square = %.3f\n", chi_square);
+
+    for (i = 0; i < bin_factor; i++) {
+        for (int j = 0; j < bin_factor; j++) {
+            free(histogram1[i][j]);
+            free(histogram2[i][j]);
+        }
+        free(histogram1[i]);
+        free(histogram2[i]);
+    }
+    free(histogram1);
+    free(histogram2);
+
+    pooj_freePPM(img1);
+    pooj_freePPM(img2);
+
+    return 0;
+}
+
+void pooj_initializeHistogram(int*** histogram, int size) {
+    for (int i = 0; i < size; i++) {
+        histogram[i] = (int**)malloc(size * sizeof(int*));
+        for (int j = 0; j < size; j++) {
+            histogram[i][j] = (int*)calloc(size, sizeof(int));
+        }
+    }
+}
+
+int pooj_calculateBinIndex(int color_value, int factor) {
+    return color_value / (256 / factor);
+}
+
+PoojImage* pooj_loadPPM(const char* filename) {
+    FILE* file = fopen(filename, "rb");
+    if (!file) {
+        printf("Error: Cannot open file %s\n", filename);
+        return NULL;
+    }
+
+    PoojImage* img = (PoojImage*)malloc(sizeof(PoojImage));
+    if (fscanf(file, "P6\n%d %d\n255\n", &img->width, &img->height) != 2) {
+        printf("Error: Invalid PPM format\n");
+        free(img);
+        fclose(file);
+        return NULL;
+    }
+
+    img->data = (PoojPixel*)malloc(img->width * img->height * sizeof(PoojPixel));
+    fread(img->data, sizeof(PoojPixel), img->width * img->height, file);
+    fclose(file);
+    return img;
+}
+
+void pooj_freePPM(PoojImage* image) {
+    free(image->data);
+    free(image);
+}
